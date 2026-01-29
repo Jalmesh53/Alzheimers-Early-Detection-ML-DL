@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import joblib
 import tensorflow as tf
 from PIL import Image
 
@@ -33,19 +32,10 @@ MODEL_ACCURACY = {
 }
 
 # ==================================================
-# LOAD MODELS
+# LOAD MODEL (ONLY CNN – USED IN APP)
 # ==================================================
 MODEL_DIR = "Outputs"
-
-# ML / ANN models are loaded only for documentation completeness
-rf_model = joblib.load(f"{MODEL_DIR}/random_forest_model.pkl")
-ann_model = tf.keras.models.load_model(f"{MODEL_DIR}/alzheimer_ann_model.h5")
-
-# CNN model (USED IN APP)
 cnn_model = tf.keras.models.load_model(f"{MODEL_DIR}/alzheimer_cnn_model.h5")
-
-# Fusion model kept for architecture completeness (not used live)
-fusion_model = tf.keras.models.load_model("final_fusion_model.keras")
 
 # ==================================================
 # HEADER
@@ -59,7 +49,6 @@ st.caption("Real-time MRI-based Alzheimer’s stage classification")
 st.subheader("📊 Model Accuracy (Offline Evaluation)")
 
 col1, col2, col3, col4 = st.columns(4)
-
 col1.metric("ML Accuracy", "88.6%")
 col2.metric("ANN Accuracy", "90.1%")
 col3.metric("CNN Accuracy", "91.3%")
@@ -96,19 +85,18 @@ stage_summary = {
 st.table(pd.DataFrame(stage_summary))
 
 # ==================================================
-# IMPORTANT NOTE (CSV REMOVED – VERY IMPORTANT)
+# IMPORTANT NOTE
 # ==================================================
 st.info(
-    "⚠️ Clinical ML/ANN/Fusion models were trained on high-dimensional "
-    "preprocessed clinical features and are evaluated offline. "
-    "The live application focuses on MRI-based CNN prediction, "
-    "which is suitable for real-time use."
+    "⚠️ Clinical ML, ANN, and Fusion models were evaluated offline due to "
+    "high-dimensional preprocessing requirements. "
+    "This live application focuses on MRI-based CNN prediction."
 )
 
 st.divider()
 
 # ==================================================
-# MRI IMAGE UPLOAD (PRIMARY FUNCTIONALITY)
+# MRI IMAGE UPLOAD
 # ==================================================
 st.subheader("📂 Upload MRI Image")
 
@@ -145,6 +133,14 @@ if img_file:
             f"- **Stage Accuracy:** {stage_accuracy}\n"
         )
 
-        except Exception as e:
-            st.error(f"Prediction Error: {str(e)}")
-            st.write("Ensure your scaler matches your input features.")
+    except Exception as e:
+        st.error(f"Prediction Error: {str(e)}")
+
+# ==================================================
+# FOOTER
+# ==================================================
+st.divider()
+st.caption(
+    "Alzheimer’s Early Detection System | CNN Deployment | "
+    "ML/ANN/Fusion Evaluated Offline (Power BI)"
+)
