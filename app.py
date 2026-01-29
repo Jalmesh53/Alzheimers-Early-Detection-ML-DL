@@ -35,7 +35,12 @@ MODEL_ACCURACY = {
 # LOAD MODEL (ONLY CNN – USED IN APP)
 # ==================================================
 MODEL_DIR = "Outputs"
-cnn_model = tf.keras.models.load_model(f"{MODEL_DIR}/alzheimer_cnn_model.keras")
+cnn_model = tf.keras.models.load_model(
+    f"{MODEL_DIR}/alzheimer_cnn_model.keras",
+    compile=False,
+    safe_mode=False
+)
+
 
 # ==================================================
 # HEADER
