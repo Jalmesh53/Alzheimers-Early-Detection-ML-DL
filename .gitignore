@@ -1,0 +1,10 @@
+# Ignore everything by default
+*
+
+# Allow deployment files
+!app.py
+!requirements.txt
+!README.md
+!.gitattributes
+!Outputs/
+!Outputs/alzheimer_cnn_model.h5
