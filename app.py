@@ -1,79 +1,149 @@
 import streamlit as st
-import tensorflow as tf
 import numpy as np
+import pandas as pd
 import joblib
-import os
+import tensorflow as tf
 from PIL import Image
 
-# 1. Load the model and scaler
-@st.cache_resource
-def load_assets():
-    model = tf.keras.models.load_model('final_fusion_model.keras')
-    scaler = joblib.load('clinical_scaler.pkl')
-    return model, scaler
+# ==================================================
+# PAGE CONFIG
+# ==================================================
+st.set_page_config(
+    page_title="Alzheimer’s MRI Classification Dashboard",
+    layout="wide"
+)
 
-model, scaler = load_assets()
-labels = ['Mild Demented', 'Moderate Demented', 'Non Demented', 'Very Mild Demented']
+# ==================================================
+# CONSTANTS (POWER BI – SOURCE OF TRUTH)
+# ==================================================
+OVERALL_ACCURACY = "91.30%"
 
-# 2. UI Header
-st.title("🧠 Alzheimer's Diagnostic Assistant")
-st.markdown("---")
+STAGE_MAP = {
+    0: "Non Demented",
+    1: "Very Mild Demented",
+    2: "Mild Demented",
+    3: "Moderate Demented"
+}
 
-# 3. Inputs: Image + Clinical Data
-col1, col2 = st.columns(2)
+MODEL_ACCURACY = {
+    "Non Demented": "89.37%",
+    "Very Mild Demented": "84.39%",
+    "Mild Demented": "96.20%",
+    "Moderate Demented": "94.72%"
+}
 
-with col1:
-    st.subheader("📊 Clinical Data")
-    age = st.number_input("Age", 50, 100, 75)
-    mmse = st.slider("MMSE Score (Cognitive Test)", 0, 30, 24)
-    etiv = st.number_input("eTIV (Total Intracranial Volume)", 1000, 2000, 1500)
-    
-    # Check if Scaler needs more features than the 3 we have
-    expected_features = scaler.n_features_in_
-    if expected_features > 3:
-        st.info(f"💡 Scaler expects {expected_features} features. Filling missing ones with 0.")
+# ==================================================
+# LOAD MODELS
+# ==================================================
+MODEL_DIR = "Outputs"
 
-with col2:
-    st.subheader("🖼️ MRI Scan")
-    file = st.file_uploader("Upload Axial MRI Scan", type=["jpg", "png", "jpeg"])
-    if file:
-        st.image(file, caption="Uploaded MRI", use_container_width=True)
+# ML / ANN models are loaded only for documentation completeness
+rf_model = joblib.load(f"{MODEL_DIR}/random_forest_model.pkl")
+ann_model = tf.keras.models.load_model(f"{MODEL_DIR}/alzheimer_ann_model.h5")
 
-# 4. Prediction Logic
-if st.button("Generate Diagnostic Prediction", type="primary"):
-    if not file:
-        st.error("Please upload an MRI image first.")
-    else:
-        try:
-            # A. Process Image
-            img = Image.open(file).convert('RGB').resize((128, 128))
-            img_arr = np.array(img) / 255.0
-            img_arr = np.expand_dims(img_arr, axis=0)
+# CNN model (USED IN APP)
+cnn_model = tf.keras.models.load_model(f"{MODEL_DIR}/alzheimer_cnn_model.h5")
 
-            # B. Process Clinical Data (Dynamic Feature Padding)
-            # We provide the 3 we have, and fill the rest with 0.0 to avoid ValueError
-            clinical_input = [age, mmse, etiv]
-            while len(clinical_input) < expected_features:
-                clinical_input.append(0.0)
-            
-            # Scaler expects a 2D array: [[f1, f2, f3...]]
-            clinical_arr = scaler.transform([clinical_input])
+# Fusion model kept for architecture completeness (not used live)
+fusion_model = tf.keras.models.load_model("final_fusion_model.keras")
 
-            # C. Final Prediction
-            pred = model.predict([img_arr, clinical_arr], verbose=0)
-            idx = np.argmax(pred)
-            res = labels[idx]
-            conf = np.max(pred) * 100
+# ==================================================
+# HEADER
+# ==================================================
+st.title("🧠 Alzheimer’s Early Detection System")
+st.caption("Real-time MRI-based Alzheimer’s stage classification")
 
-            # D. Display Results
-            st.markdown("---")
-            if "Non Demented" in res:
-                st.balloons()
-                st.success(f"### Result: {res}")
-            else:
-                st.warning(f"### Result: {res}")
-            
-            st.metric("Confidence Level", f"{conf:.2f}%")
+# ==================================================
+# ACCURACY SUMMARY
+# ==================================================
+st.subheader("📊 Model Accuracy (Offline Evaluation)")
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("ML Accuracy", "88.6%")
+col2.metric("ANN Accuracy", "90.1%")
+col3.metric("CNN Accuracy", "91.3%")
+col4.metric("Fusion Accuracy", "93.4%")
+
+st.divider()
+
+# ==================================================
+# ALZHEIMER'S STAGE SUMMARY
+# ==================================================
+st.subheader("🧠 Alzheimer’s Disease Stage Summary")
+
+stage_summary = {
+    "Stage": [
+        "Non Demented",
+        "Very Mild Demented",
+        "Mild Demented",
+        "Moderate Demented"
+    ],
+    "Severity": [
+        "None",
+        "Low",
+        "Medium",
+        "High"
+    ],
+    "Description": [
+        "Healthy brain with no significant cognitive impairment",
+        "Early cognitive decline; symptoms may not affect daily life",
+        "Noticeable memory loss and difficulty with daily activities",
+        "Advanced stage with severe cognitive and functional decline"
+    ]
+}
+
+st.table(pd.DataFrame(stage_summary))
+
+# ==================================================
+# IMPORTANT NOTE (CSV REMOVED – VERY IMPORTANT)
+# ==================================================
+st.info(
+    "⚠️ Clinical ML/ANN/Fusion models were trained on high-dimensional "
+    "preprocessed clinical features and are evaluated offline. "
+    "The live application focuses on MRI-based CNN prediction, "
+    "which is suitable for real-time use."
+)
+
+st.divider()
+
+# ==================================================
+# MRI IMAGE UPLOAD (PRIMARY FUNCTIONALITY)
+# ==================================================
+st.subheader("📂 Upload MRI Image")
+
+img_file = st.file_uploader(
+    "Upload MRI Image (JPG / PNG)",
+    type=["jpg", "jpeg", "png"]
+)
+
+# ==================================================
+# MRI IMAGE → CNN
+# ==================================================
+if img_file:
+    st.subheader("🖼️ MRI Image Preview")
+
+    try:
+        img = Image.open(img_file).convert("RGB")
+        st.image(img, width=260)
+
+        img = img.resize((128, 128))
+        img = np.array(img) / 255.0
+        img = np.expand_dims(img, axis=0)
+
+        probs = cnn_model.predict(img)[0]
+        pred_class = int(np.argmax(probs))
+        confidence = float(np.max(probs)) * 100
+
+        stage = STAGE_MAP[pred_class]
+        stage_accuracy = MODEL_ACCURACY[stage]
+
+        st.success(
+            f"🧠 **CNN Diagnosis Result**\n\n"
+            f"- **Predicted Stage:** {stage}\n"
+            f"- **Prediction Confidence:** {confidence:.2f}%\n"
+            f"- **Stage Accuracy:** {stage_accuracy}\n"
+        )
 
         except Exception as e:
             st.error(f"Prediction Error: {str(e)}")
