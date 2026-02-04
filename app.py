@@ -3,6 +3,9 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from PIL import Image
+import cv2
+
+from src.brain_mri_filter import brain_mri_quick_check
 
 # ==================================================
 # PAGE CONFIG
@@ -13,7 +16,7 @@ st.set_page_config(
 )
 
 # ==================================================
-# CONSTANTS (POWER BI – SOURCE OF TRUTH)
+# CONSTANTS
 # ==================================================
 OVERALL_ACCURACY = "91.30%"
 
@@ -32,7 +35,7 @@ MODEL_ACCURACY = {
 }
 
 # ==================================================
-# LOAD MODEL (ONLY CNN – USED IN APP)
+# LOAD MODEL
 # ==================================================
 MODEL_DIR = "Outputs"
 cnn_model = tf.keras.models.load_model(
@@ -41,12 +44,11 @@ cnn_model = tf.keras.models.load_model(
     safe_mode=False
 )
 
-
 # ==================================================
 # HEADER
 # ==================================================
 st.title("🧠 Alzheimer’s Early Detection System")
-st.caption("Real-time MRI-based Alzheimer’s stage classification")
+st.caption("AI-assisted MRI-based Alzheimer’s stage classification")
 
 # ==================================================
 # ACCURACY SUMMARY
@@ -62,26 +64,16 @@ col4.metric("Fusion Accuracy", "93.4%")
 st.divider()
 
 # ==================================================
-# ALZHEIMER'S STAGE SUMMARY
+# STAGE SUMMARY
 # ==================================================
 st.subheader("🧠 Alzheimer’s Disease Stage Summary")
 
 stage_summary = {
-    "Stage": [
-        "Non Demented",
-        "Very Mild Demented",
-        "Mild Demented",
-        "Moderate Demented"
-    ],
-    "Severity": [
-        "None",
-        "Low",
-        "Medium",
-        "High"
-    ],
+    "Stage": list(STAGE_MAP.values()),
+    "Severity": ["None", "Low", "Medium", "High"],
     "Description": [
         "Healthy brain with no significant cognitive impairment",
-        "Early cognitive decline; symptoms may not affect daily life",
+        "Early cognitive decline, symptoms may not affect daily life",
         "Noticeable memory loss and difficulty with daily activities",
         "Advanced stage with severe cognitive and functional decline"
     ]
@@ -89,19 +81,15 @@ stage_summary = {
 
 st.table(pd.DataFrame(stage_summary))
 
-# ==================================================
-# IMPORTANT NOTE
-# ==================================================
 st.info(
-    "⚠️ Clinical ML, ANN, and Fusion models were evaluated offline due to "
-    "high-dimensional preprocessing requirements. "
-    "This live application focuses on MRI-based CNN prediction."
+    "⚠️ This system supports only axial brain MRI images. "
+    "Other medical images are automatically rejected."
 )
 
 st.divider()
 
 # ==================================================
-# MRI IMAGE UPLOAD
+# IMAGE UPLOAD
 # ==================================================
 st.subheader("📂 Upload MRI Image")
 
@@ -111,32 +99,85 @@ img_file = st.file_uploader(
 )
 
 # ==================================================
-# MRI IMAGE → CNN
+# MRI → VALIDATION → CNN PREDICTION
 # ==================================================
-if img_file:
+if img_file is not None:
     st.subheader("🖼️ MRI Image Preview")
 
     try:
-        img = Image.open(img_file).convert("RGB")
-        st.image(img, width=260)
+        # Load image using PIL
+        pil_img = Image.open(img_file).convert("RGB")
+        st.image(pil_img, width=260)
 
-        img = img.resize((128, 128))
-        img = np.array(img) / 255.0
-        img = np.expand_dims(img, axis=0)
+        # Convert to NumPy (OpenCV format) for validation
+        img_np = np.array(pil_img)
 
-        probs = cnn_model.predict(img)[0]
+        # -------------------------------
+        # 🛑 Brain MRI validation
+        # -------------------------------
+        if not brain_mri_quick_check(img_np):
+            st.error("❌ Invalid input detected")
+            st.warning("Please upload a valid **BRAIN MRI** image.")
+            st.stop()
+
+        # -------------------------------
+        # Preprocess image for CNN
+        # -------------------------------
+        img_resized = pil_img.resize((128, 128))
+        img_array = np.array(img_resized) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
+
+        # -------------------------------
+        # CNN Prediction
+        # -------------------------------
+        probs = cnn_model.predict(img_array)[0]
         pred_class = int(np.argmax(probs))
-        confidence = float(np.max(probs)) * 100
 
         stage = STAGE_MAP[pred_class]
         stage_accuracy = MODEL_ACCURACY[stage]
 
+        # -------------------------------
+        # Confidence-based rejection
+        # -------------------------------
+        max_prob = float(np.max(probs))
+
+        if max_prob < 0.85:
+            st.error("⚠️ Prediction rejected due to low confidence")
+            st.warning(
+                "The uploaded image may not be a valid brain MRI "
+                "or is outside the model’s training distribution."
+            )
+            st.stop()
+
+        # -------------------------------
+        # Model certainty label
+        # -------------------------------
+        if max_prob >= 0.75:
+            certainty = "High"
+        elif max_prob >= 0.55:
+            certainty = "Medium"
+        else:
+            certainty = "Low"
+
+        # -------------------------------
+        # Display result
+        # -------------------------------
         st.success(
             f"🧠 **CNN Diagnosis Result**\n\n"
             f"- **Predicted Stage:** {stage}\n"
-            f"- **Prediction Confidence:** {confidence:.2f}%\n"
+            f"- **Model Certainty:** {certainty}\n"
             f"- **Stage Accuracy:** {stage_accuracy}\n"
         )
+
+        # -------------------------------
+        # Probability table
+        # -------------------------------
+        st.subheader("📈 Class Probability Distribution")
+        prob_df = pd.DataFrame({
+            "Stage": list(STAGE_MAP.values()),
+            "Probability": [f"{p:.2f}" for p in probs]
+        })
+        st.table(prob_df)
 
     except Exception as e:
         st.error(f"Prediction Error: {str(e)}")
@@ -147,5 +188,5 @@ if img_file:
 st.divider()
 st.caption(
     "Alzheimer’s Early Detection System | CNN Deployment | "
-    "ML/ANN/Fusion Evaluated Offline (Power BI)"
+    "Predictions are probabilistic and not a medical diagnosis"
 )
