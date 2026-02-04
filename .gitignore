@@ -1,10 +1,32 @@
-# Ignore everything by default
-*
+# ==============================
+# Python cache
+# ==============================
+__pycache__/
+*.pyc
 
-# Allow deployment files
-!app.py
-!requirements.txt
-!README.md
-!.gitattributes
-!Outputs/
+# ==============================
+# Virtual environments
+# ==============================
+venv/
+.env/
+
+# ==============================
+# ML / DL artifacts (large files)
+# ==============================
+*.pkl
+
+# Ignore all outputs EXCEPT needed models
+Outputs/
 !Outputs/alzheimer_cnn_model.h5
+!Outputs/alzheimer_cnn_model.keras
+
+# ==============================
+# TensorFlow / Keras temp dirs
+# ==============================
+keras215/
+
+# ==============================
+# OS / Editor junk
+# ==============================
+.DS_Store
+.vscode/
