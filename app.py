@@ -3,6 +3,10 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from PIL import Image
+import cv2
+
+# 👉 Brain MRI validation
+from src.brain_mri_filter import brain_mri_quick_check
 
 # ==================================================
 # PAGE CONFIG
@@ -35,7 +39,10 @@ MODEL_ACCURACY = {
 # LOAD MODEL (ONLY CNN – USED IN APP)
 # ==================================================
 MODEL_DIR = "Outputs"
-cnn_model = tf.keras.models.load_model(f"{MODEL_DIR}/alzheimer_cnn_model.h5")
+cnn_model = tf.keras.models.load_model(
+    f"{MODEL_DIR}/alzheimer_cnn_model.h5",
+    compile=False
+)
 
 # ==================================================
 # HEADER
@@ -84,9 +91,11 @@ stage_summary = {
 
 st.table(pd.DataFrame(stage_summary))
 
-# ==================================================
-# IMPORTANT NOTE
-# ==================================================
+st.info(
+    "⚠️ This system supports only **axial brain MRI images**. "
+    "Other medical images are automatically rejected."
+)
+
 st.info(
     "⚠️ Clinical ML, ANN, and Fusion models were evaluated offline due to "
     "high-dimensional preprocessing requirements. "
@@ -106,26 +115,60 @@ img_file = st.file_uploader(
 )
 
 # ==================================================
-# MRI IMAGE → CNN
+# MRI → VALIDATION → CNN
 # ==================================================
-if img_file:
+if img_file is not None:
     st.subheader("🖼️ MRI Image Preview")
 
     try:
-        img = Image.open(img_file).convert("RGB")
-        st.image(img, width=260)
+        # Load image
+        pil_img = Image.open(img_file).convert("RGB")
+        st.image(pil_img, width=260)
 
-        img = img.resize((128, 128))
-        img = np.array(img) / 255.0
-        img = np.expand_dims(img, axis=0)
+        # Convert to NumPy for validation
+        img_np = np.array(pil_img)
 
-        probs = cnn_model.predict(img)[0]
+        # -------------------------------
+        # 🛑 Brain MRI validation
+        # -------------------------------
+        if not brain_mri_quick_check(img_np):
+            st.error("❌ Invalid input detected")
+            st.warning("Please upload a valid **BRAIN MRI** image.")
+            st.stop()
+
+        # -------------------------------
+        # Preprocess for CNN
+        # -------------------------------
+        img_resized = pil_img.resize((128, 128))
+        img_array = np.array(img_resized) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
+
+        # -------------------------------
+        # CNN Prediction
+        # -------------------------------
+        probs = cnn_model.predict(img_array)[0]
         pred_class = int(np.argmax(probs))
-        confidence = float(np.max(probs)) * 100
+        max_prob = float(np.max(probs))
+
+        # -------------------------------
+        # Confidence-based rejection
+        # -------------------------------
+        if max_prob < 0.85:
+            st.error("⚠️ Prediction rejected due to low confidence")
+            st.warning(
+                "The uploaded image may not be a valid brain MRI "
+                "or is outside the model’s training distribution."
+            )
+            st.stop()
 
         stage = STAGE_MAP[pred_class]
         stage_accuracy = MODEL_ACCURACY[stage]
 
+        confidence = max_prob * 100
+
+        # -------------------------------
+        # Display result
+        # -------------------------------
         st.success(
             f"🧠 **CNN Diagnosis Result**\n\n"
             f"- **Predicted Stage:** {stage}\n"
