@@ -39,16 +39,48 @@ MODEL_ACCURACY = {
 # LOAD MODEL (ONLY CNN – USED IN APP)
 # ==================================================
 MODEL_DIR = "Outputs"
-cnn_model = tf.keras.models.load_model(
-    f"{MODEL_DIR}/alzheimer_cnn_model.h5",
-    compile=False
-)
+
+@st.cache_resource
+def load_cnn_model():
+    return tf.keras.models.load_model(
+        f"{MODEL_DIR}/alzheimer_cnn_model.h5",
+        compile=False
+    )
+
+cnn_model = load_cnn_model()
+
+# ==================================================
+# CLINICAL DECISION SUPPORT LOGIC
+# ==================================================
+def get_clinical_advice(patient_age, stage_label):
+    """Calculates the seriousness based on age and AI prediction."""
+    stage = stage_label.lower()
+    
+    if "non" in stage:
+        return "🟢 **Seriousness: LOW**\n\n*Analysis:* Patient shows healthy cognitive structures. Continue routine annual screenings."
+        
+    elif "very mild" in stage:
+        if patient_age < 65:
+            return "🟠 **Seriousness: HIGH ALERT (Early-Onset Risk)**\n\n*Analysis:* Mild tissue loss is highly unusual for a patient under 65. Immediate neurological evaluation required to rule out aggressive early-onset factors."
+        else:
+            return "🟡 **Seriousness: MODERATE**\n\n*Analysis:* Typical signs of Mild Cognitive Impairment (MCI) for this age. Monitor closely and consider lifestyle/dietary interventions."
+            
+    elif "mild" in stage:
+        if patient_age < 65:
+            return "🔴 **Seriousness: SEVERE (Early-Onset Risk)**\n\n*Analysis:* Significant early-onset progression suspected. Immediate medical intervention and treatment plan needed."
+        else:
+            return "🟠 **Seriousness: HIGH**\n\n*Analysis:* Clinical Alzheimer's indicators are present. Begin symptom management and medication evaluation."
+            
+    elif "moderate" in stage:
+        return "🔴 **Seriousness: CRITICAL**\n\n*Analysis:* Advanced stage neurodegeneration detected. Comprehensive care plan, specialist intervention, and daily support required."
+        
+    return "⚠️ Assessment unavailable."
 
 # ==================================================
 # HEADER
 # ==================================================
 st.title("🧠 Alzheimer’s Early Detection System")
-st.caption("Real-time MRI-based Alzheimer’s stage classification")
+st.caption("Real-time MRI-based Alzheimer’s stage classification with Clinical Support")
 
 # ==================================================
 # ACCURACY SUMMARY
@@ -105,14 +137,21 @@ st.info(
 st.divider()
 
 # ==================================================
-# MRI IMAGE UPLOAD
+# PATIENT INFO & MRI UPLOAD
 # ==================================================
-st.subheader("📂 Upload MRI Image")
+st.subheader("👨‍⚕️ Patient Details & MRI Upload")
 
-img_file = st.file_uploader(
-    "Upload MRI Image (JPG / PNG)",
-    type=["jpg", "jpeg", "png"]
-)
+# Split into two columns for Age and Image Upload
+col_age, col_upload = st.columns(2)
+
+with col_age:
+    patient_age = st.number_input("Patient Age (Years)", min_value=1, max_value=120, value=65, step=1)
+
+with col_upload:
+    img_file = st.file_uploader(
+        "Upload MRI Image (JPG / PNG)",
+        type=["jpg", "jpeg", "png"]
+    )
 
 # ==================================================
 # MRI → VALIDATION → CNN
@@ -146,7 +185,7 @@ if img_file is not None:
         # -------------------------------
         # CNN Prediction
         # -------------------------------
-        probs = cnn_model.predict(img_array)[0]
+        probs = cnn_model.predict(img_array, verbose=0)[0]
         pred_class = int(np.argmax(probs))
         max_prob = float(np.max(probs))
 
@@ -163,11 +202,10 @@ if img_file is not None:
 
         stage = STAGE_MAP[pred_class]
         stage_accuracy = MODEL_ACCURACY[stage]
-
         confidence = max_prob * 100
 
         # -------------------------------
-        # Display result
+        # Display Result & Clinical Advice
         # -------------------------------
         st.success(
             f"🧠 **CNN Diagnosis Result**\n\n"
@@ -175,6 +213,11 @@ if img_file is not None:
             f"- **Prediction Confidence:** {confidence:.2f}%\n"
             f"- **Stage Accuracy:** {stage_accuracy}\n"
         )
+        
+        # Add the Decision Support output
+        st.subheader("👨‍⚕️ Clinical Decision Support")
+        advice = get_clinical_advice(patient_age, stage)
+        st.info(advice)
 
     except Exception as e:
         st.error(f"Prediction Error: {str(e)}")
